@@ -1,0 +1,13 @@
+*.csv
+*.db
+*.pickle
+*.pkl
+*.keras
+
+__pycache__/
+.ipynb_checkpoints/
+data/
+models/
+
+.env
+test.ipynb
