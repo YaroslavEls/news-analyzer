@@ -265,3 +265,36 @@ class TsnParser(Parser):
             data += p.text
         
         return data
+
+class RbcParser(Parser):
+    def __init__(self, list_url):
+        super().__init__(list_url)
+        self._get_source()
+
+    def _date_to_url(self, date):
+        return date.strftime('%Y/%m/%d')
+
+    def _get_list(self, url):
+        soup = self._fetch_page(f'{self.list_url}{url}')
+        if not soup: return []
+
+        data = []
+        tags = soup.find('div', class_='newsline')
+        for tag in tags.find_all('div'):
+            title = tag.text
+            href = tag.a['href']
+            data.append((title, href))
+
+        return data
+    
+    def _get_article(self, url):
+        soup = self._fetch_page(url)
+        if not soup: return ''
+
+        data = ''
+        text = soup.find('div', class_='txt')
+        ps = text.find_all('p')
+        for p in ps:
+            data += p.text
+        
+        return data

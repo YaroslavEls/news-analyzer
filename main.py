@@ -1,18 +1,25 @@
 import threading
 import parsers
 
+start = '01.05.2023'
+end = '01.05.2024'
+
 threads = [
     threading.Thread(
         target=parsers.UkrPravdaParser('https://www.pravda.com.ua/news/date_').run,
-        args=('03.05.2024', '05.05.2024')
+        args=(start, end)
     ),
     threading.Thread(
         target=parsers.UnianParser('https://www.unian.ua/news/archive/').run,
-        args=('03.05.2024', '05.05.2024')
+        args=(start, end)
     ),
     threading.Thread(
         target=parsers.TsnParser('https://tsn.ua/news').run,
-        args=('03.05.2024', '05.05.2024')
+        args=(start, end)
+    ),
+    threading.Thread(
+        target=parsers.RbcParser('https://www.rbc.ua/rus/archive/').run,
+        args=(start, end)
     )
 ]
 
