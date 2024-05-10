@@ -1,9 +1,8 @@
 import requests
-import sqlite3
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
-import sql_queries as queries
+from db_handler import DatabaseHandler
 
 
 class Parser:
@@ -12,52 +11,42 @@ class Parser:
     intended for other parser classes to inherit from it.
     """
 
-    def __init__(self, list_url):
+    def __init__(self):
         """
         Initialization of the class object.
 
-        :param list_url: The static url prefix of the pages to be parsed.
+        :attr list_url: Url of the web resource for parsing
+        :attr source: Id of the source in database
+        :attr db: DatabaseHandler
         """
-        self.list_url = list_url
+        self.list_url = None
         self.source = None
-        self.conn = sqlite3.connect('./data/news.db', check_same_thread=False)
-        self.cursor = self.conn.cursor()
-        self._init_db()
+        self.db = DatabaseHandler()
 
-    def _init_db(self):
+    def _get_source(self, modify=True):
         """
-        Creates database tables if they don't exist.
-        """
-        self.cursor.execute(queries.create_table_sources)
-        self.cursor.execute(queries.create_table_articles)
-        self.conn.commit()
-
-    def _get_source(self):
-        """
-        Gets the `id` of the source used by parser from the database.
+        Sets the source attribute to the `id` of the source
+        used by parser from the database.
         If the source is not in database, creates one.
         """
-        name = '/'.join(self.list_url.split('/')[:3])
+        name = '/'.join(self.list_url.split('/')[:3]) \
+            if modify else self.list_url
 
-        self.cursor.execute(queries.select_from_sources, (name,))
-        row = self.cursor.fetchone()
+        row = self.db.get_source_id(name)
 
         if row:
             self.source = row[0]
         else:
-            self.cursor.execute(queries.insert_in_sources, (name,))
-            self.conn.commit()
-            self.source = self.cursor.lastrowid
+            self.source = self.db.create_source(name)
 
     def _write_to_db(self, values):
         """
         Writes the data to the `articles` table in database.
 
         :param values: List of values for database enty (link, 
-                       title, text, date, source_id).
+            title, text, date, source_id).
         """
-        self.cursor.execute(queries.insert_in_articles, values)
-        self.conn.commit()
+        self.db.create_article(values)
 
     def _fetch_page(self, url):
         """
@@ -107,11 +96,10 @@ class Parser:
 
     def _save_articles_from_list(self, list, date):
         """
-        Gets texts from all articles in the provided list and writes
-        them to database.
+        Writes texts from all articles in the provided list to the database.
 
         :param list: The list of tuples in format [(title, href)].
-        :param date: The date corresponding to the articles.
+        :param date: The date corresponding to the articles in list.
         """
         for (title, href) in list:
             text = self._get_article(href)
@@ -139,12 +127,13 @@ class Parser:
             self._save_articles_from_list(a_list, current)
             current += timedelta(days=1)
 
-        self.conn.close()
+        self.db.disconnect()
         print(f'Source {self.source} finished!')
 
 class UkrPravdaParser(Parser):
-    def __init__(self, list_url):
-        super().__init__(list_url)
+    def __init__(self):
+        super().__init__()
+        self.list_url = 'https://www.pravda.com.ua/news/date_'
         self._get_source()
 
     def _date_to_url(self, date):
@@ -178,8 +167,9 @@ class UkrPravdaParser(Parser):
         return data
 
 class UnianParser(Parser):
-    def __init__(self, list_url):
-        super().__init__(list_url)
+    def __init__(self):
+        super().__init__()
+        self.list_url = 'https://www.unian.ua/news/archive/'
         self._get_source()
 
     def _date_to_url(self, date):
@@ -219,8 +209,9 @@ class UnianParser(Parser):
         return data
 
 class TsnParser(Parser):
-    def __init__(self, list_url):
-        super().__init__(list_url)
+    def __init__(self):
+        super().__init__()
+        self.list_url = 'https://tsn.ua/news'
         self._get_source()
 
     def _date_to_url(self, date):
@@ -267,8 +258,9 @@ class TsnParser(Parser):
         return data
 
 class RbcParser(Parser):
-    def __init__(self, list_url):
-        super().__init__(list_url)
+    def __init__(self):
+        super().__init__()
+        self.list_url = 'https://www.rbc.ua/rus/archive/'
         self._get_source()
 
     def _date_to_url(self, date):
@@ -298,3 +290,101 @@ class RbcParser(Parser):
             data += p.text
         
         return data
+
+class SuspilneParser(Parser):
+    def __init__(self):
+        super().__init__()
+        self.list_url = 'https://suspilne.media/archive/'
+        self._get_source()
+
+    def _date_to_url(self, date):
+        return date.strftime("%Y/%-m/%-d")
+
+    def _get_list(self, url):
+        soup = self._fetch_page(f'{self.list_url}{url}')
+        if not soup: return []
+
+        data = []
+        tags = soup.find_all('div', class_='l-four-column-grid__item')
+        for tag in tags:
+            href = tag.a['href']
+            if href.split('/')[3] in ['sport', 'culture']: continue
+            title = tag.h4.text
+            data.append((title, href))
+
+        return data
+    
+    def _get_article(self, url):
+        soup = self._fetch_page(url)
+        if not soup: return ''
+
+        text = soup.find('div', class_='l-article-content__container-inner')
+        data = text.find('h2').text if text.find('h2') else ''
+        ps = text.find_all('p')
+        for p in ps:
+            data += p.text
+        
+        return data
+
+class TelegramParser(Parser):
+    def __init__(self, name, post_id):
+        super().__init__()
+        self.list_url = f'https://t.me/s/{name}'
+        self._get_source(modify=False)
+        self.post_id = post_id
+
+    def _date_to_url(self, date):
+        return date
+
+    def _get_list(self, date):
+        data = []
+        stop = 0
+        while stop == 0:
+            soup = self._fetch_page(f'{self.list_url}/{self.post_id}')
+            if not soup: return []
+
+            name = self.list_url.split('/')[4]
+            nums = [x for x in range(int(self.post_id)-2, int(self.post_id)+3)]
+            tags = [
+                soup.find('div', {
+                    'class': 'tgme_widget_message', 
+                    'data-post': f'{name}/{i}'
+                }) for i in nums
+            ]
+            for tag in tags:
+                if not tag: continue
+
+                title = tag.find('div', class_='tgme_widget_message_text')
+                title_text = ''
+                if title:
+                    for br in title.find_all('br'):
+                        br.replace_with('\n')
+                    title_text = title.find_all(string=True, recursive=True)
+                    title_text = ' '.join(title_text)
+                href = f"{self.list_url}/{tag['data-post'].split('/')[1]}"
+
+                time = tag.find('time', class_='time')['datetime']
+                date_obj = datetime \
+                    .strptime(time, "%Y-%m-%dT%H:%M:%S%z") \
+                    .replace(minute=0, second=0, hour=0, tzinfo=None)
+                if date_obj < date: 
+                    continue
+                if date_obj > date: 
+                    stop += 1
+                    continue
+
+                data.append((title_text, href))
+
+            self.post_id = str(int(self.post_id) + (5 - stop))
+
+        return data
+    
+    def _save_articles_from_list(self, list, date):
+        for (title, href) in list:
+            if title == '': continue
+
+            text = title
+            title = text.split('\n')[0]
+            title = title.split('.')[0] if len(title.split('.')) > 1 else title
+            values = [href, title, text, date, self.source]
+            self._write_to_db(values)
