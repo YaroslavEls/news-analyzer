@@ -1,8 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
-
-from db_handler import DatabaseHandler
+from database.db_handler import DatabaseHandler
 
 
 class Parser:
@@ -22,6 +21,7 @@ class Parser:
         self.list_url = None
         self.source = None
         self.db = DatabaseHandler()
+        self.data = []
 
     def _get_source(self, modify=True):
         """
@@ -38,15 +38,6 @@ class Parser:
             self.source = row[0]
         else:
             self.source = self.db.create_source(name)
-
-    def _write_to_db(self, values):
-        """
-        Writes the data to the `articles` table in database.
-
-        :param values: List of values for database enty (link, 
-            title, text, date, source_id).
-        """
-        self.db.create_article(values)
 
     def _fetch_page(self, url):
         """
@@ -106,7 +97,8 @@ class Parser:
             if text == '': continue
 
             values = [href, title, text, date, self.source]
-            self._write_to_db(values)
+            # self._write_to_db(values)
+            self.data.append(values)
 
     def run(self, date1, date2):
         """
@@ -129,6 +121,7 @@ class Parser:
 
         self.db.disconnect()
         print(f'Source {self.source} finished!')
+        return self.data
 
 class UkrPravdaParser(Parser):
     def __init__(self):
@@ -387,4 +380,5 @@ class TelegramParser(Parser):
             title = text.split('\n')[0]
             title = title.split('.')[0] if len(title.split('.')) > 1 else title
             values = [href, title, text, date, self.source]
-            self._write_to_db(values)
+            # self._write_to_db(values)
+            self.data.append(values)

@@ -1,8 +1,8 @@
 import os
 import sqlite3
 from dotenv import load_dotenv
-
 load_dotenv()
+
 
 class DatabaseHandler:
     def __init__(self):
@@ -36,6 +36,9 @@ class DatabaseHandler:
                 text TEXT,
                 date TEXT,
                 source_id INTEGER,
+                clean_text TEXT,
+                clean_title TEXT,
+                label FLOAT,
                 FOREIGN KEY(source_id) REFERENCES sources(id))
                 '''
         self.cursor.execute(query)
@@ -88,9 +91,36 @@ class DatabaseHandler:
         self.cursor.execute(query)
         return self.cursor.fetchall()
     
-    def get_article_lable(self, link):
+    def get_source(self, id):
         query = '''
-                SELECT preds.label
+                SELECT articles.date, preds.label 
+                FROM articles
+                JOIN preds ON articles.id = preds.article_id
+                WHERE articles.source_id = ?
+                '''
+        self.cursor.execute(query, (id,))
+        return self.cursor.fetchall()
+    
+    def get_source_name(self, id):
+        query = 'SELECT name FROM sources WHERE id = ?'
+        self.cursor.execute(query, (id,))
+        return self.cursor.fetchone()[0]
+    
+    def check_source(self, id):
+        query = '''
+                SELECT EXISTS (
+                    SELECT 1 
+                    FROM sources
+                    WHERE id = ?
+                )
+                '''
+        self.cursor.execute(query, (id,))
+        return bool(self.cursor.fetchone()[0])
+    
+    def get_article_info(self, link):
+        query = '''
+                SELECT 
+                articles.title, articles.date, articles.text, preds.label
                 FROM articles
                 JOIN preds ON articles.id = preds.article_id
                 WHERE articles.link = ?
